@@ -1,3 +1,21 @@
 spring:
   application:
     name: server
+  # ? konfigurasi thymeleaf (opsional, default sudah bagus)
+  thymeleaf:
+    prefix: classpath:/templates/
+    suffix: .html
+    # ? atur ke true untuk produksi
+    cache: false
+
+server:
+  port: 8080
+  # ? konfigurasi timeout session http - set expired 1 menit (production bisa diset 30 menit)
+  servlet:
+    session:
+      timeout: 1m
+
+# ? konfigurasi port sftp server (apache mina sshd)
+sftp:
+  server:
+    port: 2222
