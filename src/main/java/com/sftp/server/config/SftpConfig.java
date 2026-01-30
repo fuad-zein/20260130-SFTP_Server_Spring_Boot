@@ -10,11 +10,8 @@ import java.util.Map;
 import org.apache.sshd.common.file.virtualfs.VirtualFileSystemFactory;
 import org.apache.sshd.common.session.SessionContext;
 import org.apache.sshd.server.SshServer;
-import org.apache.sshd.server.auth.AsyncAuthException;
 import org.apache.sshd.server.auth.password.PasswordAuthenticator;
-import org.apache.sshd.server.auth.password.PasswordChangeRequiredException;
 import org.apache.sshd.server.keyprovider.SimpleGeneratorHostKeyProvider;
-import org.apache.sshd.server.session.ServerSession;
 import org.apache.sshd.sftp.server.SftpSubsystemFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Configuration;
@@ -27,16 +24,13 @@ public class SftpConfig {
   @Value("${sftp.server.port:2222}")
   private int sftpPort;
 
-  private String userName = null;
-  private Path userFolder = null;
-
-  private final Map<String, String> userPasswords = Map.of(
-      "user1", "pass123",
-      "user2", "pass456");
+  private final Map<String, String> userPasswords = Map.of("user1", "pass123", "user2", "pass456");
 
   private final Map<String, Path> userFolders = Map.of(
-      "user1", Paths.get("/home/fuzi/Documents/Experiments/StoreFolders/user1").toAbsolutePath(),
-      "user2", Paths.get("/home/fuzi/Documents/Experiments/StoreFolders/user2").toAbsolutePath());
+      "user1",
+      Paths.get("/home/fuzi/Documents/Experiments/StoreFolders/user1").toAbsolutePath(),
+      "user2",
+      Paths.get("/home/fuzi/Documents/Experiments/StoreFolders/user2").toAbsolutePath());
 
   @PostConstruct
   public void startSftpServer() throws IOException {
@@ -47,44 +41,43 @@ public class SftpConfig {
     sshd.setPasswordAuthenticator(passwordAuthenticator());
 
     // ? setup default folder for user
-    sshd.setFileSystemFactory(new VirtualFileSystemFactory() {
-
-      @Override
-      public FileSystem createFileSystem(SessionContext session) throws IOException {
-        String username = session.getUsername();
-        Path userHome = userFolders.getOrDefault(username, userFolder.toAbsolutePath());
-        this.setUserHomeDir(username, userHome);
-        return super.createFileSystem(session);
-      }
-    });
+    sshd.setFileSystemFactory(fileSystemFactory());
 
     // ? activate subsystem sftp
     sshd.setSubsystemFactories(Collections.singletonList(new SftpSubsystemFactory()));
     sshd.start();
-    System.out.println("✅ SFTP Server started on port 2222, root: " + userFolder);
+    System.out.println("✅ SFTP Server started on port " + sftpPort);
   }
 
   private PasswordAuthenticator passwordAuthenticator() {
-    return new PasswordAuthenticator() {
+    return (username, password, session) -> {
+      String expectedPassword = userPasswords.get(username);
 
-      @Override
-      public boolean authenticate(String username, String password, ServerSession session)
-          throws PasswordChangeRequiredException, AsyncAuthException {
-        userName = username;
-        boolean isUserValid = userPasswords.containsKey(username);
-        boolean isPasswordValid = userPasswords.get(username).equals(password);
-
-        if (isUserValid) {
-          userFolder = userFolders.get(username);
-          System.out.println("User is valid : " + username);
-          System.out.println("User folder is : " + userFolder);
-        } else {
-          System.out.println("User is not valid : " + username);
-        }
-
-        return isUserValid && isPasswordValid;
+      if (expectedPassword == null) {
+        System.out.println("❌ Unknown user: " + username);
+        return false;
       }
 
+      boolean valid = expectedPassword.equals(password);
+      System.out.println(valid ? "✅ Auth success: " + username : "❌ Auth failed: " + username);
+      return valid;
+    };
+  }
+
+  private VirtualFileSystemFactory fileSystemFactory() {
+    return new VirtualFileSystemFactory() {
+      @Override
+      public FileSystem createFileSystem(SessionContext session) throws IOException {
+        String username = session.getUsername();
+        Path homeDir = userFolders.get(username);
+
+        if (homeDir == null) {
+          throw new IOException("Home directory not configured for user: " + username);
+        }
+
+        setUserHomeDir(username, homeDir);
+        return super.createFileSystem(session);
+      }
     };
   }
 
